@@ -6,11 +6,23 @@ TRY_LOOP="20"
 : "${REDIS_PORT:="6379"}"
 : "${REDIS_PASSWORD:=""}"
 
-: "${POSTGRES_HOST:="postgres"}"
-: "${POSTGRES_PORT:="5432"}"
-: "${POSTGRES_USER:="airflow"}"
-: "${POSTGRES_PASSWORD:="airflow"}"
-: "${POSTGRES_DB:="airflow"}"
+: "${DB_SCHEME:="postgresql"}"
+: "${DB_DRIVER:="psycopg2"}"
+: "${DB_HOST:="postgres"}"
+: "${DB_PORT:="5432"}"
+: "${DB_USER:="airflow"}"
+: "${DB_PASSWORD:="airflow"}"
+: "${DB_NAME:="airflow"}"
+
+if [[ ${POSTGRES_HOST} ]] || [[ ${POSTGRES_PORT} ]] || [[ ${POSTGRES_USER} ]] || [[ ${POSTGRES_PASSWORD} ]] || [[ ${POSTGRES_DB} ]]; then
+    echo "[DEPRECATION WARNING]: POSTGRES_* variables will be removed from the image at the release of the next Airflow major version (v2.0). Please use DB_* variables."
+fi
+
+: "${POSTGRES_HOST:=${DB_HOST}}"
+: "${POSTGRES_PORT:=${DB_PORT}}"
+: "${POSTGRES_USER:=${DB_USER}}"
+: "${POSTGRES_PASSWORD:=${DB_PASSWORD}}"
+: "${POSTGRES_DB:=${DB_NAME}}"
 
 # Defaults and back-compat
 : "${AIRFLOW__CORE__FERNET_KEY:=${FERNET_KEY:=$(python -c "from cryptography.fernet import Fernet; FERNET_KEY = Fernet.generate_key().decode(); print(FERNET_KEY)")}}"
@@ -57,9 +69,11 @@ wait_for_port() {
 }
 
 if [ "$AIRFLOW__CORE__EXECUTOR" != "SequentialExecutor" ]; then
-  AIRFLOW__CORE__SQL_ALCHEMY_CONN="postgresql+psycopg2://$POSTGRES_USER:$POSTGRES_PASSWORD@$POSTGRES_HOST:$POSTGRES_PORT/$POSTGRES_DB"
-  AIRFLOW__CELERY__RESULT_BACKEND="db+postgresql://$POSTGRES_USER:$POSTGRES_PASSWORD@$POSTGRES_HOST:$POSTGRES_PORT/$POSTGRES_DB"
-  wait_for_port "Postgres" "$POSTGRES_HOST" "$POSTGRES_PORT"
+  : "${AIRFLOW__CORE__SQL_ALCHEMY_CONN:="${DB_SCHEME}+${DB_DRIVER}://${DB_USER}:${DB_PASSWORD}@${DB_HOST}:${DB_PORT}/${DB_NAME}"}"
+  if [ "$AIRFLOW__CORE__EXECUTOR" = "CeleryExecutor" ]; then
+    : "${AIRFLOW__CELERY__RESULT_BACKEND:="db+${DB_SCHEME}://${DB_USER}:${DB_PASSWORD}@${DB_HOST}:${DB_PORT}/${DB_NAME}"}"
+  fi
+  wait_for_port "${DB_SCHEME^}" "$DB_HOST" "$DB_PORT"
 fi
 
 if [ "$AIRFLOW__CORE__EXECUTOR" = "CeleryExecutor" ]; then
